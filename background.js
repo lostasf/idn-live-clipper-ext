@@ -173,7 +173,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     }
 
     case 'openClipperTab': {
-      const slug = message.payload?.slug || message.slug || '';
+      let slug = message.payload?.slug || message.slug || '';
       const givenTabId = message.payload?.tabId || message.tabId;
       (async () => {
         let targetTabId = givenTabId;
@@ -183,9 +183,14 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             let matchingTab = null;
             if (slug) {
               matchingTab = tabs.find((t) => t.url && t.url.includes(slug));
-            }
-            if (!matchingTab && tabs.length > 0) {
-              matchingTab = tabs[0];
+            } else if (tabs.length > 0) {
+              matchingTab = tabs.find((t) => t.url && (t.url.includes('/live/') || t.url.includes('/embed-player/'))) || tabs[0];
+              if (matchingTab && matchingTab.url) {
+                const match =
+                  matchingTab.url.match(/\/(?:live|embed-player|embed)\/([a-zA-Z0-9_-]+)/) ||
+                  matchingTab.url.match(/^\/[^/]+\/live\/([a-zA-Z0-9_-]+)/);
+                if (match && match[1]) slug = match[1];
+              }
             }
             if (matchingTab) {
               targetTabId = matchingTab.id;
@@ -193,7 +198,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           } catch (_) {}
         }
         if (!targetTabId && tabId && sender.tab?.url && sender.tab.url.includes('idn.app')) {
-          targetTabId = tabId;
+          if (!slug || sender.tab.url.includes(slug)) {
+            targetTabId = tabId;
+          }
         }
         const tabParam = targetTabId ? `&tabId=${targetTabId}` : '';
         const url = chrome.runtime.getURL(`clipper/clipper.html?slug=${encodeURIComponent(slug)}${tabParam}`);
@@ -209,9 +216,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         let matchingTab = null;
         if (slug) {
           matchingTab = tabs.find((t) => t.url && t.url.includes(slug));
-        }
-        if (!matchingTab && tabs.length > 0) {
-          matchingTab = tabs[0];
+        } else if (tabs.length > 0) {
+          // If no slug requested, prefer active live stream tab
+          matchingTab = tabs.find((t) => t.url && (t.url.includes('/live/') || t.url.includes('/embed-player/'))) || tabs[0];
         }
         sendResponse({ tab: matchingTab || null });
       });
@@ -256,17 +263,21 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         try {
           if (message.segment && globalThis.ClipperStorage) {
             let data = message.segment.data;
-            if (!data && message.segment.base64) {
+            const hasValidBuffer = data && (data instanceof ArrayBuffer || data instanceof Uint8Array) && data.byteLength > 0;
+            if (!hasValidBuffer && message.segment.base64) {
               const bin = atob(message.segment.base64);
               const u8 = new Uint8Array(bin.length);
               for (let i = 0; i < bin.length; i++) {
                 u8[i] = bin.charCodeAt(i);
               }
               data = u8.buffer;
-            } else if (data instanceof Uint8Array) {
+            } else if (hasValidBuffer && data instanceof Uint8Array) {
               data = data.buffer;
+            } else if (!hasValidBuffer) {
+              data = null;
             }
-            if (data && (data instanceof ArrayBuffer || data.byteLength > 0)) {
+
+            if (data && data.byteLength > 0) {
               await globalThis.ClipperStorage.saveSegment({ ...message.segment, data });
               // Periodic prune: ~5% chance per incoming segment to keep buffer healthy
               if (Math.random() < 0.05) {
@@ -309,36 +320,83 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     case 'GET_ALL_CACHED_STREAMS': {
       (async () => {
         try {
-          // 1. Try querying extension-origin IndexedDB directly
+          const mergedMap = new Map();
+
+          const mergeStream = (s) => {
+            if (!s || !s.streamSlug) return;
+            const existing = mergedMap.get(s.streamSlug);
+            if (!existing) {
+              mergedMap.set(s.streamSlug, { ...s });
+            } else {
+              const existingCount = existing.count || 0;
+              const newCount = s.count || 0;
+              const existingTime = existing.lastSavedAt || existing.updatedAt || 0;
+              const newTime = s.lastSavedAt || s.updatedAt || 0;
+
+              mergedMap.set(s.streamSlug, {
+                ...existing,
+                ...s,
+                count: Math.max(existingCount, newCount),
+                totalBytes: Math.max(existing.totalBytes || 0, s.totalBytes || 0),
+                durationSec: Math.max(existing.durationSec || 0, s.durationSec || 0),
+                lastSavedAt: Math.max(existingTime, newTime),
+                updatedAt: Math.max(existingTime, newTime),
+                title: s.title || existing.title || s.streamSlug,
+                creator: s.creator || existing.creator || '',
+                creatorUsername: s.creatorUsername || existing.creatorUsername || '',
+                creatorAvatar: s.creatorAvatar || existing.creatorAvatar || '',
+                status: s.status || existing.status || 'ended',
+                playbackUrl: s.playbackUrl || existing.playbackUrl || '',
+              });
+            }
+          };
+
+          // 1. Read persisted streams metadata from chrome.storage.local
+          try {
+            const storageRes = await chrome.storage.local.get(['better_idn_cached_streams']);
+            const cachedMap = storageRes.better_idn_cached_streams || {};
+            for (const s of Object.values(cachedMap)) {
+              mergeStream(s);
+            }
+          } catch (_) {}
+
+          // 2. Query extension-origin IndexedDB directly
           if (globalThis.ClipperStorage) {
             try {
-              const streams = await globalThis.ClipperStorage.getAllCachedStreams();
-              if (streams && streams.length > 0) {
-                return sendResponse({ ok: true, streams });
+              const extStreams = await globalThis.ClipperStorage.getAllCachedStreams();
+              if (Array.isArray(extStreams)) {
+                for (const s of extStreams) {
+                  mergeStream(s);
+                }
               }
             } catch (_) {}
           }
 
-          // 2. Try querying an active IDN tab for real-time IndexedDB state
-          const tabs = await chrome.tabs.query({ url: ['https://*.idn.app/*', 'https://idn.app/*'] });
-          if (tabs.length > 0) {
+          // 3. Query all active IDN tabs for real-time IndexedDB state
+          try {
+            const tabs = await chrome.tabs.query({ url: ['https://*.idn.app/*', 'https://idn.app/*'] });
             for (const tab of tabs) {
               try {
                 const response = await chrome.tabs.sendMessage(tab.id, { action: 'GET_ALL_CACHED_STREAMS' });
-                if (response && response.ok && Array.isArray(response.streams) && response.streams.length > 0) {
-                  return sendResponse({ ok: true, streams: response.streams });
+                if (response && response.ok && Array.isArray(response.streams)) {
+                  for (const s of response.streams) {
+                    mergeStream(s);
+                  }
                 }
-              } catch (_) {
-                // Tab might not be ready or active, try next or fallback
-              }
+              } catch (_) {}
             }
-          }
+          } catch (_) {}
 
-          // 3. Fallback: Read persisted streams metadata from chrome.storage.local
-          const storageRes = await chrome.storage.local.get(['better_idn_cached_streams']);
-          const cachedMap = storageRes.better_idn_cached_streams || {};
-          const streams = Object.values(cachedMap);
-          streams.sort((a, b) => (b.lastSavedAt || 0) - (a.lastSavedAt || 0));
+          const streams = Array.from(mergedMap.values());
+          streams.sort((a, b) => (b.lastSavedAt || b.updatedAt || 0) - (a.lastSavedAt || a.updatedAt || 0));
+
+          // Keep chrome.storage.local updated with the merged map
+          const newStorageMap = {};
+          for (const s of streams) {
+            newStorageMap[s.streamSlug] = s;
+          }
+          await chrome.storage.local.set({ better_idn_cached_streams: newStorageMap }).catch(() => {});
+
           sendResponse({ ok: true, streams });
         } catch (err) {
           sendResponse({ ok: false, error: err.message, streams: [] });

@@ -458,12 +458,40 @@
               duration: s.duration,
               byteLength: s.byteLength,
             }));
+
+            let title = document.title;
+            let creator = {};
+            let playbackUrl = '';
+            let qualities = [];
+
+            if (!message.slug || message.slug === getActiveSlug()) {
+              title = state.streamData?.title || document.title;
+              creator = state.streamData?.creator || {};
+              playbackUrl = state.playbackUrl || '';
+              qualities = state.qualities || [];
+            } else {
+              const meta = window.ClipperStorage ? await window.ClipperStorage.getStreamMetadata(slug) : null;
+              if (meta) {
+                title = meta.title || slug;
+                creator = { name: meta.creator || '' };
+                playbackUrl = meta.playbackUrl || '';
+              } else {
+                const storageRes = await chrome.storage.local.get(['better_idn_cached_streams']);
+                const cached = storageRes.better_idn_cached_streams?.[slug];
+                if (cached) {
+                  title = cached.title || slug;
+                  creator = { name: cached.creator || '' };
+                  playbackUrl = cached.playbackUrl || '';
+                }
+              }
+            }
+
             const streamInfo = {
-              title: state.streamData?.title || document.title,
-              creator: state.streamData?.creator || {},
+              title,
+              creator,
               slug,
-              playbackUrl: state.playbackUrl,
-              qualities: state.qualities,
+              playbackUrl,
+              qualities,
             };
             sendResponse({ ok: true, stats, segmentsMeta, streamInfo });
           } catch (err) {
@@ -792,19 +820,30 @@
       const slug = targetSlug || getActiveSlug();
       if (!slug) return;
       const segs = await window.ClipperStorage.getAllSegments(slug);
-      for (const s of segs) {
-        chrome.runtime.sendMessage({
-          action: 'SAVE_SEGMENT',
-          segment: {
-            streamSlug: s.streamSlug,
-            sequence: s.sequence,
-            timestamp: s.timestamp,
-            duration: s.duration,
-            url: s.url,
-            data: s.data,
-            quality: s.quality,
-          },
-        }).catch(() => {});
+      // Batch in groups of 5 with a small pause to avoid overwhelming IPC
+      for (let i = 0; i < segs.length; i += 5) {
+        const batch = segs.slice(i, i + 5);
+        await Promise.all(
+          batch.map((s) => {
+            const base64 = s.data ? arrayBufferToBase64(s.data) : '';
+            if (!base64) return Promise.resolve();
+            return chrome.runtime.sendMessage({
+              action: 'SAVE_SEGMENT',
+              segment: {
+                streamSlug: s.streamSlug,
+                sequence: s.sequence,
+                timestamp: s.timestamp,
+                duration: s.duration,
+                url: s.url,
+                base64,
+                quality: s.quality,
+              },
+            }).catch(() => {});
+          })
+        );
+        if (i + 5 < segs.length) {
+          await new Promise((r) => setTimeout(r, 10));
+        }
       }
     } catch (_) {}
   }
@@ -1347,10 +1386,19 @@
         bufferEngine.downloadedSeqs.add(segItem.sequence);
         bufferEngine.inFlightSeqs.delete(segItem.sequence);
 
-        // Forward ArrayBuffer directly to Extension-Origin IndexedDB in background (no base64 CPU burn)
+        // Forward segment to Extension-Origin IndexedDB in background using base64 for safe IPC
+        const base64Data = arrayBufferToBase64(arrayBuffer);
         chrome.runtime.sendMessage({
           action: 'SAVE_SEGMENT',
-          segment: { ...segRecord, data: arrayBuffer },
+          segment: {
+            streamSlug: segRecord.streamSlug,
+            sequence: segRecord.sequence,
+            timestamp: segRecord.timestamp,
+            duration: segRecord.duration,
+            url: segRecord.url,
+            quality: segRecord.quality,
+            base64: base64Data,
+          },
         }).catch(() => {});
 
         bufferEngine.segmentCountSincePrune++;

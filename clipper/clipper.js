@@ -133,9 +133,12 @@
     if (state.sourceTabId) {
       try {
         const tab = await chrome.tabs.get(state.sourceTabId);
-        if (tab && tab.url && (tab.url.includes('idn.app') || !state.slug || tab.url.includes(state.slug))) {
-          return tab;
+        if (tab && tab.url && tab.url.includes('idn.app')) {
+          if (!state.slug || tab.url.includes(state.slug)) {
+            return tab;
+          }
         }
+        state.sourceTabId = null;
       } catch (_) {
         state.sourceTabId = null;
       }
@@ -322,28 +325,50 @@
   async function fetchStreamData() {
     // 0. Auto-detect stream slug if none provided in query params
     if (!state.slug) {
-      if (window.ClipperStorage) {
-        try {
-          const allCached = await window.ClipperStorage.getAllCachedStreams();
-          if (allCached && allCached.length > 0) {
-            state.slug = allCached[0].streamSlug;
+      // Priority 1: Check if an active IDN live stream tab is currently open
+      try {
+        const tabRes = await new Promise((resolve) => {
+          chrome.runtime.sendMessage({ action: 'findStreamTab' }, resolve);
+        });
+        if (tabRes && tabRes.tab && tabRes.tab.url) {
+          const match =
+            tabRes.tab.url.match(/\/(?:live|embed-player|embed)\/([a-zA-Z0-9_-]+)/) ||
+            tabRes.tab.url.match(/^\/[^/]+\/live\/([a-zA-Z0-9_-]+)/);
+          if (match && match[1]) {
+            state.slug = match[1];
+            state.sourceTabId = tabRes.tab.id;
           }
-        } catch (_) {}
-      }
+        }
+      } catch (_) {}
+
+      // Priority 2: Check storage for freshest stream
       if (!state.slug) {
         try {
           const storageRes = await chrome.storage.local.get(['better_idn_cached_streams']);
           const map = storageRes.better_idn_cached_streams || {};
           const streams = Object.values(map);
-          streams.sort((a, b) => (b.lastSavedAt || 0) - (a.lastSavedAt || 0));
+          streams.sort((a, b) => (b.lastSavedAt || b.updatedAt || 0) - (a.lastSavedAt || a.updatedAt || 0));
           if (streams.length > 0) {
             state.slug = streams[0].streamSlug;
           }
         } catch (_) {}
       }
+
+      // Priority 3: Check local Extension IndexedDB
+      if (!state.slug && window.ClipperStorage) {
+        try {
+          const allCached = await window.ClipperStorage.getAllCachedStreams();
+          if (allCached && allCached.length > 0) {
+            allCached.sort((a, b) => (b.lastSavedAt || 0) - (a.lastSavedAt || 0));
+            state.slug = allCached[0].streamSlug;
+          }
+        } catch (_) {}
+      }
+
       if (state.slug) {
         const newUrl = new URL(window.location.href);
         newUrl.searchParams.set('slug', state.slug);
+        if (state.sourceTabId) newUrl.searchParams.set('tabId', state.sourceTabId);
         window.history.replaceState({}, '', newUrl.toString());
       }
     }
@@ -1481,22 +1506,55 @@
 
   async function loadStudioCachedStreams() {
     try {
-      let streams = [];
+      const mergedMap = new Map();
+
+      // 1. Request merged list from background (which checks tabs + extension DB + storage)
+      try {
+        const response = await chrome.runtime.sendMessage({ action: 'GET_ALL_CACHED_STREAMS' });
+        if (response && response.ok && Array.isArray(response.streams)) {
+          for (const s of response.streams) {
+            mergedMap.set(s.streamSlug, { ...s });
+          }
+        }
+      } catch (_) {}
+
+      // 2. Also check local extension IndexedDB directly
       if (window.ClipperStorage) {
         try {
-          streams = await window.ClipperStorage.getAllCachedStreams();
+          const localStreams = await window.ClipperStorage.getAllCachedStreams();
+          if (Array.isArray(localStreams)) {
+            for (const s of localStreams) {
+              const existing = mergedMap.get(s.streamSlug);
+              if (!existing) {
+                mergedMap.set(s.streamSlug, { ...s });
+              } else {
+                mergedMap.set(s.streamSlug, {
+                  ...existing,
+                  ...s,
+                  count: Math.max(existing.count || 0, s.count || 0),
+                  totalBytes: Math.max(existing.totalBytes || 0, s.totalBytes || 0),
+                  durationSec: Math.max(existing.durationSec || 0, s.durationSec || 0),
+                  lastSavedAt: Math.max(existing.lastSavedAt || 0, s.lastSavedAt || 0),
+                });
+              }
+            }
+          }
         } catch (_) {}
       }
 
-      if (!streams || streams.length === 0) {
-        const response = await chrome.runtime.sendMessage({ action: 'GET_ALL_CACHED_STREAMS' });
-        if (response && response.ok && Array.isArray(response.streams)) {
-          streams = response.streams;
-        } else {
+      // 3. Fallback to storage if mergedMap is still empty
+      if (mergedMap.size === 0) {
+        try {
           const storageRes = await chrome.storage.local.get(['better_idn_cached_streams']);
-          streams = Object.values(storageRes.better_idn_cached_streams || {});
-        }
+          const cachedMap = storageRes.better_idn_cached_streams || {};
+          for (const s of Object.values(cachedMap)) {
+            mergedMap.set(s.streamSlug, s);
+          }
+        } catch (_) {}
       }
+
+      const streams = Array.from(mergedMap.values());
+      streams.sort((a, b) => (b.lastSavedAt || b.updatedAt || 0) - (a.lastSavedAt || a.updatedAt || 0));
 
       const validStreams = streams.filter((s) => (s.count && s.count > 0) || (s.totalBytes && s.totalBytes > 0));
       if (els.studioCachedCount) {
@@ -1652,6 +1710,13 @@
     if (diffSec < 3600) return `${Math.floor(diffSec / 60)}m ago`;
     if (diffSec < 86400) return `${Math.floor(diffSec / 3600)}h ago`;
     return `${Math.floor(diffSec / 86400)}d ago`;
+  }
+
+  function escapeHtml(str) {
+    if (!str) return '';
+    const div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
   }
 
   // ── Init ───────────────────────────────────────────────────────────────────
