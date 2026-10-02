@@ -1,0 +1,35 @@
+[
+  {
+    "id": 1,
+    "priority": 1,
+    "action": {
+      "type": "block"
+    },
+    "condition": {
+      "urlFilter": "||zdassets.com",
+      "initiatorDomains": ["idn.app", "www.idn.app"]
+    }
+  },
+  {
+    "id": 2,
+    "priority": 1,
+    "action": {
+      "type": "block"
+    },
+    "condition": {
+      "urlFilter": "||zendesk.com",
+      "initiatorDomains": ["idn.app", "www.idn.app"]
+    }
+  },
+  {
+    "id": 3,
+    "priority": 1,
+    "action": {
+      "type": "block"
+    },
+    "condition": {
+      "urlFilter": "||zopim.com",
+      "initiatorDomains": ["idn.app", "www.idn.app"]
+    }
+  }
+]

@@ -1,0 +1,67 @@
+# ── Chrome Extension Artifacts ──────────────────────────────────────────
+# Chrome generated ruleset index (created automatically by declarativeNetRequest)
+_metadata/
+
+# Packed extension files and private signing keys
+*.crx
+*.pem
+*.zip
+
+# ── Media & Clip Artifacts ──────────────────────────────────────────────
+# Test recordings, exported clips, and stream dumps
+*.mp4
+*.ts
+*.m4s
+*.m3u8
+*.aac
+*.wav
+
+# ── Operating System Files ──────────────────────────────────────────────
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon
+._*
+
+# Windows
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+ehthumbs_vista.db
+desktop.ini
+$RECYCLE.BIN/
+
+# Linux
+*~
+.directory
+
+# ── Development & IDE ───────────────────────────────────────────────────
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+.idea/
+*.sublime-project
+*.sublime-workspace
+*.swp
+*.swo
+
+# ── Logs & Debugging ────────────────────────────────────────────────────
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# ── Dependencies & Build (if package manager added) ─────────────────────
+node_modules/
+.npm/
+dist/
+build/
+tmp/
+temp/
+
+# ── Skills ──────────────────────────────────────────────────────────────
+.agents/

@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>IDN Live Clipper Ext — Clipper Studio</title>
+  <link rel="stylesheet" href="clipper.css">
+  <link rel="icon" type="image/png" href="../icons/icon48.png">
+</head>
+<body>
+  <div class="studio-app">
+    <!-- Top Studio Header -->
+    <header class="studio-header">
+      <div class="header-left">
+        <div class="studio-logo">
+          <div class="logo-mark">
+            <svg class="icon-scissors" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="6" cy="6" r="3"></circle>
+              <circle cx="6" cy="18" r="3"></circle>
+              <line x1="20" y1="4" x2="8.12" y2="15.88"></line>
+              <line x1="14.47" y1="14.48" x2="20" y2="20"></line>
+              <line x1="8.12" y1="8.12" x2="12" y2="12"></line>
+            </svg>
+          </div>
+          <div class="logo-text">
+            <span class="logo-brand">IDN Live Clipper Ext</span>
+            <span class="logo-sub">Clipper Studio</span>
+          </div>
+        </div>
+
+        <div class="stream-info" id="stream-info">
+          <div class="stream-title" id="stream-title">Loading live stream info...</div>
+          <div class="stream-meta" id="stream-meta">
+            <span class="creator-badge" id="creator-name">—</span>
+            <span class="slug-badge" id="stream-slug">—</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="header-right">
+        <div class="status-badge" id="connection-status">
+          <span class="status-dot green"></span>
+          <span id="connection-text">Connecting to Stream Tab...</span>
+        </div>
+        <div class="status-badge buffer-badge" id="buffer-badge">
+          <svg class="badge-icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="2" y="4" width="20" height="16" rx="2"></rect>
+            <path d="M10 4v4"></path>
+            <path d="M2 8h20"></path>
+          </svg>
+          <span>Buffer: <strong id="buffer-duration">0s</strong> (<span id="buffer-count">0</span> segs)</span>
+        </div>
+        <button class="btn btn-secondary btn-sm" id="btn-cached-streams-modal" title="View all cached stream videos">
+          <svg class="btn-icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"></path>
+          </svg>
+          <span>Cached Streams (<span id="studio-cached-count">0</span>)</span>
+        </button>
+        <input type="file" id="input-local-mp4" accept="video/mp4,video/*" style="display: none;">
+        <button class="btn btn-secondary btn-sm" id="btn-open-local-mp4" title="Open and edit a downloaded MP4 video file from your computer">
+          <svg class="btn-icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
+          </svg>
+          <span>Open Local MP4</span>
+        </button>
+        <button class="btn btn-secondary btn-sm btn-icon-only" id="btn-refresh-buffer" title="Refresh buffered segments">
+          <svg class="btn-icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.2"></path>
+          </svg>
+        </button>
+        <button class="btn btn-live-tab btn-sm" id="btn-switch-stream-tab" title="Switch back to active live stream tab">
+          <span class="live-dot-pulse"></span>
+          <span>Live Stream Tab</span>
+        </button>
+      </div>
+    </header>
+
+    <!-- Studio Main Workspace -->
+    <main class="studio-main">
+      <div class="workspace-grid">
+        <!-- Left: Video Preview Section -->
+        <section class="preview-panel">
+          <div class="video-wrapper">
+            <video id="preview-video" playsinline controls preload="auto"></video>
+            
+            <div class="video-overlay-msg" id="video-overlay-msg" style="display: none;">
+              <div class="overlay-icon-wrap">
+                <svg class="overlay-icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                  <polygon points="5 3 19 12 5 21 5 3"></polygon>
+                </svg>
+              </div>
+              <div class="overlay-title">Ready to Preview</div>
+              <div class="overlay-desc">Use the timeline below to select a clip range and click <strong>Download MP4</strong></div>
+            </div>
+
+            <div class="video-loading" id="video-loading" style="display: none;">
+              <div class="spinner-ring"></div>
+              <div class="loading-text" id="loading-status-text">Remuxing clip segments...</div>
+              <div class="progress-bar-container">
+                <div class="progress-bar-fill" id="loading-progress-bar" style="width: 0%;"></div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- Right: Clip Settings & Action Panel -->
+        <section class="controls-panel">
+          <div class="studio-card clip-card">
+            <div class="card-header-clean">
+              <div class="card-header-title">
+                <svg class="card-icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <circle cx="6" cy="6" r="3"></circle>
+                  <circle cx="6" cy="18" r="3"></circle>
+                  <line x1="20" y1="4" x2="8.12" y2="15.88"></line>
+                  <line x1="14.47" y1="14.48" x2="20" y2="20"></line>
+                </svg>
+                <span>Clip Selection</span>
+              </div>
+            </div>
+
+            <!-- Clip Info Summary -->
+            <div class="clip-stats-grid">
+              <div class="stat-box">
+                <div class="stat-label">Clip Length</div>
+                <div class="stat-val highlight" id="clip-duration-stat">0.0s</div>
+              </div>
+              <div class="stat-box">
+                <div class="stat-label">Segments</div>
+                <div class="stat-val" id="clip-segments-stat">0 segs</div>
+              </div>
+              <div class="stat-box">
+                <div class="stat-label">Estimated Size</div>
+                <div class="stat-val" id="clip-size-stat">~0 MB</div>
+              </div>
+            </div>
+
+            <!-- Precise Time Range Trimming -->
+            <div class="trim-group">
+              <div class="trim-row">
+                <label id="label-start-time" class="trim-label">Start Time</label>
+                <div class="trim-input-group">
+                  <button class="btn btn-nudge" id="btn-start-minus-1" title="Subtract 1 second">-1s</button>
+                  <input type="text" class="trim-input" id="input-start-time" value="00:00:00" placeholder="HH:MM:SS" title="Type start time (HH:MM:SS) and press Enter">
+                  <button class="btn btn-nudge" id="btn-start-plus-1" title="Add 1 second">+1s</button>
+                </div>
+              </div>
+              <div class="trim-row">
+                <label id="label-end-time" class="trim-label">End Time</label>
+                <div class="trim-input-group">
+                  <button class="btn btn-nudge" id="btn-end-minus-1" title="Subtract 1 second">-1s</button>
+                  <input type="text" class="trim-input" id="input-end-time" value="00:00:00" placeholder="HH:MM:SS" title="Type end time (HH:MM:SS) and press Enter">
+                  <button class="btn btn-nudge" id="btn-end-plus-1" title="Add 1 second">+1s</button>
+                </div>
+              </div>
+            </div>
+
+            <!-- Filename Input -->
+            <div class="form-group" style="margin-top: 14px;">
+              <label class="form-label" for="input-filename">Save Filename</label>
+              <input type="text" class="text-input" id="input-filename" placeholder="MemberName_datetime.mp4">
+            </div>
+
+            <!-- Action Buttons -->
+            <div class="action-buttons">
+              <button class="btn btn-secondary btn-block btn-lg" id="btn-preview-clip" title="Remux and preview selected clip in player">
+                <svg class="btn-icon-svg" viewBox="0 0 24 24" fill="currentColor">
+                  <polygon points="5 3 19 12 5 21 5 3"></polygon>
+                </svg>
+                <span id="btn-preview-clip-text">Preview Selection</span>
+              </button>
+              <button class="btn btn-export btn-block btn-lg" id="btn-download-mp4" title="Download trimmed clip as MP4">
+                <svg class="btn-icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                  <polyline points="7 10 12 15 17 10"></polyline>
+                  <line x1="12" y1="15" x2="12" y2="3"></line>
+                </svg>
+                <span>Download MP4 Clip</span>
+              </button>
+            </div>
+
+            <!-- Progress notification -->
+            <div class="task-progress" id="task-progress" style="display: none;">
+              <div class="task-info">
+                <span id="task-action-name">Transmuxing clip...</span>
+                <span id="task-percent" class="task-percent">0%</span>
+              </div>
+              <div class="progress-bar-container">
+                <div class="progress-bar-fill" id="task-progress-fill" style="width: 0%;"></div>
+              </div>
+              <div class="task-subtext" id="task-subtext">Converting MPEG-TS segments to MP4...</div>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <!-- Bottom Timeline Scrubber -->
+      <section class="timeline-section">
+        <div class="timeline-header">
+          <div class="timeline-title-group">
+            <div class="timeline-icon-wrap">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="12" cy="12" r="10"></circle>
+                <polyline points="12 6 12 12 16 14"></polyline>
+              </svg>
+            </div>
+            <span class="timeline-title">Timeline Scrubber</span>
+            <span class="timeline-range-info" id="timeline-range-info">Buffered range: 00:00 - 00:00</span>
+          </div>
+
+          <div class="timeline-zoom-group">
+            <button class="btn btn-timeline-tool" id="btn-set-start-playhead" title="Set Start Handle to Current Playhead">
+              <span>Set [ Start ]</span>
+            </button>
+            <button class="btn btn-timeline-tool" id="btn-set-end-playhead" title="Set End Handle to Current Playhead">
+              <span>Set [ End ]</span>
+            </button>
+          </div>
+        </div>
+
+        <div class="timeline-wrap" id="timeline-wrap">
+          <!-- Time Ruler (top) -->
+          <div class="timeline-ruler" id="timeline-ruler"></div>
+
+          <!-- Timeline Track -->
+          <div class="timeline-track" id="timeline-track">
+            <!-- Full Buffer Bar -->
+            <div class="timeline-buffered" id="timeline-buffered"></div>
+
+            <!-- Clip Selection Highlight Range -->
+            <div class="timeline-selection" id="timeline-selection">
+              <div class="timeline-handle handle-start" id="handle-start" title="Drag to adjust clip start">
+                <span class="handle-bar"></span>
+                <span class="handle-tag" id="tag-start">00:00:00</span>
+              </div>
+              <div class="selection-body" id="selection-body" title="Drag entire selection window"></div>
+              <div class="timeline-handle handle-end" id="handle-end" title="Drag to adjust clip end">
+                <span class="handle-bar"></span>
+                <span class="handle-tag" id="tag-end">00:00:00</span>
+              </div>
+            </div>
+
+            <!-- Playhead Indicator Needle -->
+            <div class="timeline-playhead" id="timeline-playhead">
+              <div class="playhead-head"></div>
+              <div class="playhead-line"></div>
+              <div class="playhead-tag" id="playhead-tag">00:00</div>
+            </div>
+
+            <!-- End Buffer Marker (hidden live edge) -->
+            <div class="timeline-live-marker" id="timeline-live-marker" style="display: none;"></div>
+          </div>
+
+          <!-- Tooltip on hover -->
+          <div class="timeline-tooltip" id="timeline-tooltip" style="display: none;"></div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <!-- Cached Streams Manager Modal -->
+  <div class="modal-backdrop" id="cached-streams-modal" style="display: none;">
+    <div class="modal-window">
+      <div class="modal-header">
+        <div class="modal-title-wrap">
+          <svg class="modal-icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"></path>
+          </svg>
+          <h3 class="modal-title">Cached Stream Videos</h3>
+        </div>
+        <button class="modal-close" id="btn-close-cached-modal" title="Close dialog">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+        </button>
+      </div>
+
+      <div class="modal-body">
+        <div class="modal-summary-bar">
+          <div>
+            <div class="modal-summary-val" id="modal-total-size">0 B</div>
+            <div class="modal-summary-sub"><span id="modal-streams-count">0</span> streams cached locally</div>
+          </div>
+          <div class="modal-summary-btns">
+            <button class="btn btn-danger btn-sm" id="btn-modal-clear-all">
+              <svg class="btn-icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18"></path><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"></path></svg>
+              <span>Clear All</span>
+            </button>
+            <button class="btn btn-secondary btn-sm btn-icon-only" id="btn-modal-refresh" title="Refresh">
+              <svg class="btn-icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.2"></path></svg>
+            </button>
+          </div>
+        </div>
+
+        <div class="modal-streams-list" id="modal-streams-list">
+          <!-- Dynamically populated -->
+        </div>
+
+        <div class="modal-empty-state" id="modal-empty-state" style="display: none;">
+          <p>No cached stream videos found in local storage.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Scripts -->
+  <script src="../lib/mux.min.js"></script>
+  <script src="../lib/clipperStorage.js"></script>
+  <script src="../lib/clipperTransmuxer.js"></script>
+  <script src="clipper.js"></script>
+</body>
+</html>

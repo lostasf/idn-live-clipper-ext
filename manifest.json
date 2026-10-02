@@ -1,0 +1,80 @@
+{
+  "manifest_version": 3,
+  "name": "IDN Live Clipper Ext",
+  "version": "1.0.0",
+  "description": "Video quality selector & m3u8 link extractor for IDN Live streams. Watch in VLC or pick your quality.",
+  "permissions": [
+    "activeTab",
+    "tabs",
+    "storage",
+    "unlimitedStorage",
+    "clipboardWrite",
+    "webRequest",
+    "downloads",
+    "declarativeNetRequest"
+  ],
+  "host_permissions": [
+    "https://*.idn.app/*",
+    "https://idn.app/*",
+    "https://api.idn.app/*",
+    "https://api-gumlet.idn.app/*",
+    "https://*.live-video.net/*",
+    "https://*.cloudfront.net/*",
+    "https://*.hls.live-video.net/*"
+  ],
+  "declarative_net_request": {
+    "rule_resources": [
+      {
+        "id": "ruleset_zendesk",
+        "enabled": true,
+        "path": "rules_zendesk.json"
+      }
+    ]
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://*.idn.app/*",
+        "https://idn.app/*"
+      ],
+      "js": [
+        "lib/mux.min.js",
+        "lib/clipperStorage.js",
+        "lib/clipperTransmuxer.js",
+        "content.js"
+      ],
+      "run_at": "document_start",
+      "all_frames": false
+    }
+  ],
+  "action": {
+    "default_popup": "popup/popup.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "injected.js",
+        "lib/mux.min.js",
+        "lib/clipperStorage.js",
+        "lib/clipperTransmuxer.js"
+      ],
+      "matches": [
+        "https://*.idn.app/*",
+        "https://idn.app/*"
+      ]
+    }
+  ],
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  }
+}

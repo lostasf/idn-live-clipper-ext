@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>IDN Live Clipper Ext</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="container">
+    <!-- Studio Header -->
+    <header class="header">
+      <div class="header-brand">
+        <div class="brand-mark">
+          <svg class="icon-brand" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
+          </svg>
+        </div>
+        <div class="brand-text">
+          <span class="brand-title">IDN Live Clipper Ext</span>
+          <span class="brand-subtitle">Stream & Clipper Deck</span>
+        </div>
+      </div>
+      <div class="header-meta">
+        <span class="version-tag">v1.0.0</span>
+      </div>
+    </header>
+
+    <!-- Navigation Switch -->
+    <nav class="nav-tabs" role="tablist">
+      <button class="nav-tab active" id="tab-btn-live" role="tab" aria-selected="true">
+        <svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="2" y="7" width="20" height="15" rx="2" ry="2"></rect>
+          <polyline points="17 2 12 7 7 2"></polyline>
+        </svg>
+        <span class="tab-label">Live Stream</span>
+      </button>
+      <button class="nav-tab" id="tab-btn-cached" role="tab" aria-selected="false">
+        <svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"></path>
+          <path d="m3.3 7 8.7 5 8.7-5"></path>
+          <path d="M12 22V12"></path>
+        </svg>
+        <span class="tab-label">Cached Streams</span>
+        <span class="tab-badge" id="nav-cached-badge" style="display: none;">0</span>
+      </button>
+    </nav>
+
+    <!-- Tab 1: Current Live Stream View -->
+    <main id="view-live" class="tab-view">
+      <!-- Live Status Tally -->
+      <div id="status-bar" class="status-bar status-idle">
+        <span class="status-beacon">
+          <span class="beacon-core"></span>
+          <span class="beacon-pulse"></span>
+        </span>
+        <span id="status-text" class="status-text">Waiting for stream...</span>
+      </div>
+
+      <!-- Not on IDN page -->
+      <div id="section-not-idn" class="section section-empty-state" style="display: none;">
+        <div class="empty-state">
+          <div class="empty-visual">
+            <svg class="empty-icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="2" y="7" width="20" height="15" rx="2" ry="2"></rect>
+              <polyline points="17 2 12 7 7 2"></polyline>
+              <line x1="2" y1="2" x2="22" y2="22"></line>
+            </svg>
+          </div>
+          <div class="empty-title">No Active Live Stream</div>
+          <p class="empty-sub">Open an active stream on <a href="https://www.idn.app" target="_blank" rel="noopener">idn.app</a> to monitor quality and clip live moments.</p>
+          <button class="btn btn-secondary btn-full" id="btn-goto-cached-from-not-live">
+            <svg class="btn-icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"></path>
+            </svg>
+            <span>View Cached Videos (<span id="not-live-cached-count">0</span>)</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Stream Info -->
+      <div id="section-stream" class="section" style="display: none;">
+        <div class="stream-hero-card">
+          <div class="stream-hero-top">
+            <div class="streamer-identity">
+              <div class="streamer-avatar-ph" id="streamer-avatar-initial">IDN</div>
+              <div class="streamer-details">
+                <span class="streamer-name" id="info-creator">—</span>
+                <span class="stream-title" id="info-title">—</span>
+              </div>
+            </div>
+            <div class="viewer-pill" title="Live Viewers">
+              <span class="viewer-dot"></span>
+              <span id="info-viewers" class="viewer-count">—</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Clipper & Rewind Section -->
+      <div id="section-clipper" class="section" style="display: none;">
+        <div class="panel clipper-panel">
+          <div class="panel-header">
+            <div class="panel-title-wrap">
+              <svg class="panel-icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="6" cy="6" r="3"></circle>
+                <circle cx="6" cy="18" r="3"></circle>
+                <line x1="20" y1="4" x2="8.12" y2="15.88"></line>
+                <line x1="14.47" y1="14.48" x2="20" y2="20"></line>
+                <line x1="8.12" y1="8.12" x2="12" y2="12"></line>
+              </svg>
+              <h2 class="panel-title">Instant Clipper</h2>
+            </div>
+            <span id="clipper-badge" class="badge-pill">0s buffered</span>
+          </div>
+
+          <div class="panel-body">
+            <div class="buffer-meter-row">
+              <span class="buffer-label">Local Memory Buffer</span>
+              <span id="clipper-stats-text" class="buffer-stat">0 segs (0 MB)</span>
+            </div>
+
+            <!-- Primary Launch Studio -->
+            <button id="btn-open-clipper" class="btn btn-record btn-full">
+              <svg class="btn-icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="6" cy="6" r="3"></circle>
+                <circle cx="6" cy="18" r="3"></circle>
+                <line x1="20" y1="4" x2="8.12" y2="15.88"></line>
+                <line x1="14.47" y1="14.48" x2="20" y2="20"></line>
+                <line x1="8.12" y1="8.12" x2="12" y2="12"></line>
+              </svg>
+              <span>Open Clipper Studio</span>
+              <kbd class="btn-shortcut">C</kbd>
+            </button>
+
+            <!-- Clear Buffer Row -->
+            <div class="button-row">
+              <button id="btn-clear-buffer" class="btn btn-ghost btn-full" title="Clear buffer for this stream">
+                <svg class="btn-icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M3 6h18"></path>
+                  <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"></path>
+                  <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"></path>
+                </svg>
+                <span>Clear Current Buffer</span>
+              </button>
+            </div>
+
+            <button id="btn-view-all-cached" class="btn btn-link btn-full">
+              <span>View all cached stream buffers (<span id="inline-cached-count">0</span>)</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Video Quality Selector -->
+      <div id="section-quality" class="section" style="display: none;">
+        <div class="panel">
+          <div class="panel-header">
+            <div class="panel-title-wrap">
+              <svg class="panel-icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <line x1="4" y1="21" x2="4" y2="14"></line>
+                <line x1="4" y1="10" x2="4" y2="3"></line>
+                <line x1="12" y1="21" x2="12" y2="12"></line>
+                <line x1="12" y1="8" x2="12" y2="3"></line>
+                <line x1="20" y1="21" x2="20" y2="16"></line>
+                <line x1="20" y1="12" x2="20" y2="3"></line>
+                <line x1="1" y1="14" x2="7" y2="14"></line>
+                <line x1="9" y1="8" x2="15" y2="8"></line>
+                <line x1="17" y1="16" x2="23" y2="16"></line>
+              </svg>
+              <h2 class="panel-title">Video Quality</h2>
+            </div>
+          </div>
+          <div id="quality-list" class="panel-body quality-list">
+            <div class="quality-loading">Detecting video player...</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Stream URL Section -->
+      <div id="section-url" class="section" style="display: none;">
+        <div class="panel">
+          <div class="panel-header">
+            <div class="panel-title-wrap">
+              <svg class="panel-icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path>
+                <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path>
+              </svg>
+              <h2 class="panel-title">Stream Source</h2>
+            </div>
+          </div>
+          <div class="panel-body">
+            <div id="m3u8-url-display" class="url-display">No stream URL captured</div>
+            <div class="button-row">
+              <button id="btn-copy" class="btn btn-secondary" disabled>
+                <svg class="btn-icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                  <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                </svg>
+                <span>Copy m3u8</span>
+              </button>
+              <button id="btn-vlc" class="btn btn-secondary" disabled>
+                <svg class="btn-icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <polygon points="5 3 19 12 5 21 5 3"></polygon>
+                </svg>
+                <span>Open in VLC</span>
+              </button>
+            </div>
+            <button id="btn-refresh" class="btn btn-ghost btn-full">
+              <svg class="btn-icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.2"></path>
+              </svg>
+              <span>Refresh Source</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    </main>
+
+    <!-- Tab 2: Cached Stream Videos View -->
+    <main id="view-cached" class="tab-view" style="display: none;">
+      <!-- Cache Storage Summary Deck -->
+      <div class="section">
+        <div class="cache-summary-card">
+          <div class="cache-summary-content">
+            <div class="cache-summary-left">
+              <span class="cache-summary-label">Local Cache Storage</span>
+              <div class="cache-summary-val" id="summary-total-size">0 B</div>
+              <div class="cache-summary-sub">
+                <span id="summary-streams-count">0</span> streams &bull; <span id="summary-segments-count">0</span> segments
+              </div>
+            </div>
+            <div class="cache-summary-actions">
+              <button id="btn-clear-all-cached" class="btn btn-danger btn-sm" title="Clear all stored stream videos">
+                <svg class="btn-icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M3 6h18"></path>
+                  <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"></path>
+                </svg>
+                <span>Clear All</span>
+              </button>
+              <button id="btn-refresh-cached" class="btn btn-ghost btn-square" title="Refresh Cached Streams">
+                <svg class="btn-icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.2"></path>
+                </svg>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Cached Streams List -->
+      <div class="section cached-list-section">
+        <div id="cached-streams-list" class="cached-streams-list">
+          <!-- Dynamically filled with cached stream cards -->
+        </div>
+
+        <div id="cached-empty-state" class="empty-state" style="display: none;">
+          <div class="empty-visual">
+            <svg class="empty-icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
+              <path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"></path>
+            </svg>
+          </div>
+          <div class="empty-title">No Cached Streams</div>
+          <p class="empty-sub">
+            Video segments captured while watching IDN Live streams will appear here. You can reopen them in Clipper Studio even after the live stream has finished.
+          </p>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>
