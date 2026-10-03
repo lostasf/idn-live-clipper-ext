@@ -229,14 +229,7 @@
       // Re-read local stats and refresh UI
       if (window.ClipperStorage) {
         const localStats = await window.ClipperStorage.getStats(slug);
-        const allSegs = await window.ClipperStorage.getAllSegments(slug);
-        const segmentsMeta = allSegs.map((s) => ({
-          sequence: s.sequence,
-          timestamp: s.timestamp,
-          duration: s.duration,
-          byteLength: s.byteLength,
-          quality: s.quality,
-        }));
+        const segmentsMeta = await window.ClipperStorage.getSegmentsMeta(slug);
         const meta = await window.ClipperStorage.getStreamMetadata(slug);
         applyStreamData({
           streamInfo: {
@@ -379,21 +372,11 @@
     if (window.ClipperStorage && state.slug) {
       try {
         const localStats = await window.ClipperStorage.getStats(state.slug);
-        if (localStats && localStats.count > 0) {
-          const allSegs = await window.ClipperStorage.getAllSegments(state.slug);
-          const validSegs = allSegs.filter(
-            (s) => (s.data instanceof ArrayBuffer || s.data instanceof Uint8Array) && s.data.byteLength > 0
-          );
-          localValidCount = validSegs.length;
+        if (localStats && localStats.count > 0 && localStats.totalBytes > 0) {
+          const segmentsMeta = await window.ClipperStorage.getSegmentsMeta(state.slug);
+          localValidCount = segmentsMeta.length;
 
           if (localValidCount > 0) {
-            const segmentsMeta = validSegs.map((s) => ({
-              sequence: s.sequence,
-              timestamp: s.timestamp,
-              duration: s.duration,
-              byteLength: s.byteLength,
-              quality: s.quality,
-            }));
             const meta = await window.ClipperStorage.getStreamMetadata(state.slug);
             applyStreamData({
               streamInfo: {
@@ -407,8 +390,6 @@
             });
             updateConnectionStatus(true, 'Cached Stream Buffer Loaded (Offline Ready)');
             hasLocalData = true;
-          } else {
-            console.warn('[Clipper Studio] Local segments exist but have empty data {} (pre-fix bug).');
           }
         }
       } catch (err) {
@@ -1443,9 +1424,13 @@
     // Listen for live segment updates broadcasted by content script
     chrome.runtime.onMessage.addListener((msg) => {
       if (msg.action === 'clipper_segment_update') {
-        // Keep cached streams manager modal updated, but do NOT track
-        // current live or mutate the active clipping timeline.
-        loadStudioCachedStreams();
+        // Only refresh cached streams manager modal if it is currently OPEN
+        if (els.cachedStreamsModal && els.cachedStreamsModal.style.display !== 'none') {
+          if (!window._lastStudioCacheRefresh || Date.now() - window._lastStudioCacheRefresh > 4000) {
+            window._lastStudioCacheRefresh = Date.now();
+            loadStudioCachedStreams().catch(() => {});
+          }
+        }
       }
     });
 
@@ -1508,60 +1493,60 @@
     try {
       const mergedMap = new Map();
 
-      // 1. Request merged list from background (which checks tabs + extension DB + storage)
-      try {
-        const response = await chrome.runtime.sendMessage({ action: 'GET_ALL_CACHED_STREAMS' });
-        if (response && response.ok && Array.isArray(response.streams)) {
-          for (const s of response.streams) {
-            mergedMap.set(s.streamSlug, { ...s });
-          }
+      const mergeIntoMap = (s) => {
+        if (!s || !s.streamSlug) return;
+        const existing = mergedMap.get(s.streamSlug);
+        if (!existing) {
+          mergedMap.set(s.streamSlug, { ...s });
+        } else {
+          mergedMap.set(s.streamSlug, {
+            ...existing,
+            ...s,
+            count: Math.max(existing.count || 0, s.count || 0),
+            totalBytes: Math.max(existing.totalBytes || 0, s.totalBytes || 0),
+            durationSec: Math.max(existing.durationSec || 0, s.durationSec || 0),
+            lastSavedAt: Math.max(existing.lastSavedAt || 0, s.lastSavedAt || 0),
+          });
         }
-      } catch (_) {}
+      };
 
-      // 2. Also check local extension IndexedDB directly
+      const updateUI = () => {
+        const streams = Array.from(mergedMap.values());
+        streams.sort((a, b) => (b.lastSavedAt || b.updatedAt || 0) - (a.lastSavedAt || a.updatedAt || 0));
+        const validStreams = streams.filter((s) => (s.count && s.count > 0) || (s.totalBytes && s.totalBytes > 0));
+        if (els.studioCachedCount) {
+          els.studioCachedCount.textContent = validStreams.length;
+        }
+        renderStudioCachedStreams(validStreams);
+      };
+
+      // 1. Fast path: check local extension IndexedDB directly (< 1ms from STORE_METADATA)
       if (window.ClipperStorage) {
         try {
           const localStreams = await window.ClipperStorage.getAllCachedStreams();
           if (Array.isArray(localStreams)) {
-            for (const s of localStreams) {
-              const existing = mergedMap.get(s.streamSlug);
-              if (!existing) {
-                mergedMap.set(s.streamSlug, { ...s });
-              } else {
-                mergedMap.set(s.streamSlug, {
-                  ...existing,
-                  ...s,
-                  count: Math.max(existing.count || 0, s.count || 0),
-                  totalBytes: Math.max(existing.totalBytes || 0, s.totalBytes || 0),
-                  durationSec: Math.max(existing.durationSec || 0, s.durationSec || 0),
-                  lastSavedAt: Math.max(existing.lastSavedAt || 0, s.lastSavedAt || 0),
-                });
-              }
-            }
+            for (const s of localStreams) mergeIntoMap(s);
           }
         } catch (_) {}
       }
 
-      // 3. Fallback to storage if mergedMap is still empty
-      if (mergedMap.size === 0) {
-        try {
-          const storageRes = await chrome.storage.local.get(['better_idn_cached_streams']);
-          const cachedMap = storageRes.better_idn_cached_streams || {};
-          for (const s of Object.values(cachedMap)) {
-            mergedMap.set(s.streamSlug, s);
-          }
-        } catch (_) {}
-      }
+      // 2. Fast path: read storage cache (~1ms)
+      try {
+        const storageRes = await chrome.storage.local.get(['better_idn_cached_streams']);
+        const cachedMap = storageRes.better_idn_cached_streams || {};
+        for (const s of Object.values(cachedMap)) mergeIntoMap(s);
+      } catch (_) {}
 
-      const streams = Array.from(mergedMap.values());
-      streams.sort((a, b) => (b.lastSavedAt || b.updatedAt || 0) - (a.lastSavedAt || a.updatedAt || 0));
+      // Immediate render on frame 1
+      updateUI();
 
-      const validStreams = streams.filter((s) => (s.count && s.count > 0) || (s.totalBytes && s.totalBytes > 0));
-      if (els.studioCachedCount) {
-        els.studioCachedCount.textContent = validStreams.length;
-      }
-
-      renderStudioCachedStreams(validStreams);
+      // 3. Request fresh list from background asynchronously to catch any active tab buffer
+      chrome.runtime.sendMessage({ action: 'GET_ALL_CACHED_STREAMS' }).then((response) => {
+        if (response && response.ok && Array.isArray(response.streams)) {
+          for (const s of response.streams) mergeIntoMap(s);
+          updateUI();
+        }
+      }).catch(() => {});
     } catch (_) {
       if (els.studioCachedCount) els.studioCachedCount.textContent = '0';
     }

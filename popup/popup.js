@@ -66,8 +66,17 @@
     initTabEvents();
     initCachedViewEvents();
 
-    // Load cached streams first so badges and lists are immediately populated
-    await loadCachedStreams();
+    // 1. Instant local render from storage cache to eliminate popup load delay
+    try {
+      const res = await chrome.storage.local.get(['better_idn_cached_streams']);
+      const map = res.better_idn_cached_streams || {};
+      cachedStreams = Object.values(map);
+      cachedStreams.sort((a, b) => (b.lastSavedAt || b.updatedAt || 0) - (a.lastSavedAt || a.updatedAt || 0));
+      renderCachedStreams(cachedStreams);
+    } catch (_) {}
+
+    // 2. Fetch fresh cache stats in background without blocking tab discovery
+    loadCachedStreams().catch(() => {});
 
     try {
       const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
@@ -728,7 +737,11 @@
       }
 
       case 'clipper_segment_update': {
-        loadCachedStreams();
+        // Throttle cache refresh during live streaming to at most once every 5 seconds
+        if (!window._lastCacheRefresh || Date.now() - window._lastCacheRefresh > 5000) {
+          window._lastCacheRefresh = Date.now();
+          loadCachedStreams().catch(() => {});
+        }
         break;
       }
     }

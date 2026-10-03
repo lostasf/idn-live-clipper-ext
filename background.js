@@ -351,7 +351,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             }
           };
 
-          // 1. Read persisted streams metadata from chrome.storage.local
+          // 1. Read persisted streams metadata from chrome.storage.local (instant ~1ms)
           try {
             const storageRes = await chrome.storage.local.get(['better_idn_cached_streams']);
             const cachedMap = storageRes.better_idn_cached_streams || {};
@@ -360,7 +360,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             }
           } catch (_) {}
 
-          // 2. Query extension-origin IndexedDB directly
+          // 2. Query extension-origin IndexedDB directly (< 1ms from STORE_METADATA)
           if (globalThis.ClipperStorage) {
             try {
               const extStreams = await globalThis.ClipperStorage.getAllCachedStreams();
@@ -372,32 +372,51 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             } catch (_) {}
           }
 
-          // 3. Query all active IDN tabs for real-time IndexedDB state
-          try {
-            const tabs = await chrome.tabs.query({ url: ['https://*.idn.app/*', 'https://idn.app/*'] });
-            for (const tab of tabs) {
-              try {
-                const response = await chrome.tabs.sendMessage(tab.id, { action: 'GET_ALL_CACHED_STREAMS' });
-                if (response && response.ok && Array.isArray(response.streams)) {
-                  for (const s of response.streams) {
-                    mergeStream(s);
-                  }
+          const getSortedStreams = () => {
+            const list = Array.from(mergedMap.values());
+            list.sort((a, b) => (b.lastSavedAt || b.updatedAt || 0) - (a.lastSavedAt || a.updatedAt || 0));
+            return list;
+          };
+
+          const immediateStreams = getSortedStreams();
+
+          // Immediately send response to unblock popup / clip studio (< 5ms response time)
+          sendResponse({ ok: true, streams: immediateStreams });
+
+          // 3. Asynchronously sync active IDN tabs in parallel with a 400ms timeout
+          // Keeps cache fresh without blocking the UI
+          (async () => {
+            try {
+              const tabs = await chrome.tabs.query({ url: ['https://*.idn.app/*', 'https://idn.app/*'] });
+              if (!tabs || tabs.length === 0) return;
+
+              let hasNewData = false;
+              await Promise.all(
+                tabs.map((tab) =>
+                  Promise.race([
+                    chrome.tabs.sendMessage(tab.id, { action: 'GET_ALL_CACHED_STREAMS' }).then((response) => {
+                      if (response && response.ok && Array.isArray(response.streams)) {
+                        for (const s of response.streams) {
+                          mergeStream(s);
+                          hasNewData = true;
+                        }
+                      }
+                    }).catch(() => {}),
+                    new Promise((r) => setTimeout(r, 400)), // 400ms timeout per tab prevents hanging
+                  ])
+                )
+              );
+
+              if (hasNewData) {
+                const updatedStreams = getSortedStreams();
+                const newStorageMap = {};
+                for (const s of updatedStreams) {
+                  newStorageMap[s.streamSlug] = s;
                 }
-              } catch (_) {}
-            }
-          } catch (_) {}
-
-          const streams = Array.from(mergedMap.values());
-          streams.sort((a, b) => (b.lastSavedAt || b.updatedAt || 0) - (a.lastSavedAt || a.updatedAt || 0));
-
-          // Keep chrome.storage.local updated with the merged map
-          const newStorageMap = {};
-          for (const s of streams) {
-            newStorageMap[s.streamSlug] = s;
-          }
-          await chrome.storage.local.set({ better_idn_cached_streams: newStorageMap }).catch(() => {});
-
-          sendResponse({ ok: true, streams });
+                await chrome.storage.local.set({ better_idn_cached_streams: newStorageMap }).catch(() => {});
+              }
+            } catch (_) {}
+          })();
         } catch (err) {
           sendResponse({ ok: false, error: err.message, streams: [] });
         }

@@ -451,13 +451,7 @@
           try {
             const slug = message.slug || getActiveSlug();
             const stats = window.ClipperStorage ? await window.ClipperStorage.getStats(slug) : clipper.stats;
-            const allSegs = window.ClipperStorage ? await window.ClipperStorage.getAllSegments(slug) : [];
-            const segmentsMeta = allSegs.map((s) => ({
-              sequence: s.sequence,
-              timestamp: s.timestamp,
-              duration: s.duration,
-              byteLength: s.byteLength,
-            }));
+            const segmentsMeta = window.ClipperStorage ? await window.ClipperStorage.getSegmentsMeta(slug) : [];
 
             let title = document.title;
             let creator = {};
@@ -602,25 +596,51 @@
             if (!window.ClipperStorage) {
               return sendResponse({ ok: false, error: 'ClipperStorage not loaded' });
             }
-            const all = await window.ClipperStorage.getAllSegments(slug);
-            const slice = all.slice(offset, offset + limit);
-            const items = slice.map((s) => ({
-              streamSlug: s.streamSlug,
-              sequence: s.sequence,
-              timestamp: s.timestamp,
-              duration: s.duration,
-              url: s.url,
-              quality: s.quality,
-              isInitSegment: s.isInitSegment,
-              base64: s.data ? arrayBufferToBase64(s.data) : '',
-              byteLength: s.byteLength,
-            }));
+            const allMeta = await window.ClipperStorage.getSegmentsMeta(slug);
+            const sliceMeta = allMeta.slice(offset, offset + limit);
+            const db = await window.ClipperStorage.openDB();
+            const items = await new Promise((resolve) => {
+              const tx = db.transaction(['segments'], 'readonly');
+              const store = tx.objectStore('segments');
+              const results = [];
+              let remaining = sliceMeta.length;
+              if (remaining === 0) return resolve([]);
+              for (const m of sliceMeta) {
+                const req = store.get(`${slug}_${m.sequence}`);
+                req.onsuccess = () => {
+                  const s = req.result;
+                  if (s) {
+                    results.push({
+                      streamSlug: s.streamSlug,
+                      sequence: s.sequence,
+                      timestamp: s.timestamp,
+                      duration: s.duration,
+                      url: s.url,
+                      quality: s.quality,
+                      isInitSegment: s.isInitSegment,
+                      base64: s.data ? arrayBufferToBase64(s.data) : '',
+                      byteLength: s.byteLength,
+                    });
+                  }
+                  if (--remaining === 0) {
+                    results.sort((a, b) => a.sequence - b.sequence);
+                    resolve(results);
+                  }
+                };
+                req.onerror = () => {
+                  if (--remaining === 0) {
+                    results.sort((a, b) => a.sequence - b.sequence);
+                    resolve(results);
+                  }
+                };
+              }
+            });
             sendResponse({
               ok: true,
               items,
-              total: all.length,
+              total: allMeta.length,
               offset,
-              hasMore: offset + limit < all.length,
+              hasMore: offset + limit < allMeta.length,
             });
           } catch (err) {
             sendResponse({ ok: false, error: err.message });
@@ -672,7 +692,7 @@
               }).catch(() => {});
             }
             const streams = await window.ClipperStorage.getAllCachedStreams();
-            await syncCachedStreamsToStorage();
+            await syncCachedStreamsToStorage(streams);
             sendResponse({ ok: true, streams });
           } catch (err) {
             sendResponse({ ok: false, error: err.message });
@@ -760,7 +780,11 @@
       forwardToBackground('clipperStats', stats);
       chrome.runtime.sendMessage({ action: 'clipper_segment_update', slug, stats }).catch(() => {});
       updateClipperUI();
-      syncCachedStreamsToStorage();
+      // Throttle full storage sync to at most once every 10 seconds during active live stream
+      if (!window._lastSyncStorage || Date.now() - window._lastSyncStorage > 10000) {
+        window._lastSyncStorage = Date.now();
+        syncCachedStreamsToStorage().catch(() => {});
+      }
     } catch (_) {}
   }
 
@@ -768,26 +792,13 @@
    * Sync all cached streams summary from IndexedDB to chrome.storage.local
    * so popup and extension pages can inspect cached stream videos even when idle.
    */
-  async function syncCachedStreamsToStorage() {
+  async function syncCachedStreamsToStorage(existingStreams) {
     if (!window.ClipperStorage) return [];
     try {
-      const streams = await window.ClipperStorage.getAllCachedStreams();
+      const streams = existingStreams || (await window.ClipperStorage.getAllCachedStreams());
       const map = {};
       for (const s of streams) {
         map[s.streamSlug] = s;
-        // Forward metadata to background service worker
-        chrome.runtime.sendMessage({
-          action: 'SAVE_STREAM_METADATA',
-          slug: s.streamSlug,
-          metadata: {
-            title: s.title,
-            creator: s.creator,
-            creatorUsername: s.creatorUsername,
-            creatorAvatar: s.creatorAvatar,
-            status: s.status,
-            playbackUrl: s.playbackUrl,
-          },
-        }).catch(() => {});
       }
       await chrome.storage.local.set({ better_idn_cached_streams: map }).catch(() => {});
       return streams;
@@ -1106,7 +1117,7 @@
 
     // Pre-populate already cached segment sequences from IndexedDB
     if (window.ClipperStorage) {
-      window.ClipperStorage.getAllSegments(streamSlug).then((segs) => {
+      window.ClipperStorage.getSegmentsMeta(streamSlug).then((segs) => {
         if (segs && Array.isArray(segs)) {
           for (const s of segs) {
             bufferEngine.downloadedSeqs.add(s.sequence);
