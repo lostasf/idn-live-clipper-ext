@@ -466,6 +466,37 @@ a:hover {
   color: var(--accent-cyan);
 }
 
+.buffer-retention-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+  font-size: 11px;
+}
+
+.select-retention {
+  background: var(--bg-surface-elevated, #161822);
+  color: var(--text-primary, #ffffff);
+  border: 1px solid var(--border-medium, #2e3240);
+  border-radius: var(--radius-sm, 6px);
+  padding: 3px 8px;
+  font-size: 11px;
+  font-family: inherit;
+  font-weight: 500;
+  cursor: pointer;
+  outline: none;
+  transition: all 0.15s ease;
+}
+
+.select-retention:hover {
+  border-color: var(--border-hover, #4a4d5a);
+}
+
+.select-retention:focus {
+  border-color: var(--accent-cyan, #06b6d4);
+  box-shadow: 0 0 0 2px rgba(6, 182, 212, 0.2);
+}
+
 /* ── Buttons & Button Rows ────────────────────────────────────────────────── */
 
 .button-row {

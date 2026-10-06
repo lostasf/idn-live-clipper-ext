@@ -55,6 +55,7 @@
     els.connectionText = document.getElementById('connection-text');
     els.bufferDuration = document.getElementById('buffer-duration');
     els.bufferCount = document.getElementById('buffer-count');
+    els.studioRetentionSelect = document.getElementById('studio-retention-select');
     els.btnRefresh = document.getElementById('btn-refresh-buffer');
     els.btnSwitchStream = document.getElementById('btn-switch-stream-tab');
     els.btnCachedStreamsModal = document.getElementById('btn-cached-streams-modal');
@@ -1233,6 +1234,18 @@
       }
     });
 
+    // Buffer Retention Select
+    if (els.studioRetentionSelect) {
+      els.studioRetentionSelect.addEventListener('change', async () => {
+        const mins = parseInt(els.studioRetentionSelect.value, 10) || 0;
+        await chrome.storage.local.set({ better_idn_buffer_retention: mins });
+        await chrome.runtime.sendMessage({ action: 'setRetention', minutes: mins }).catch(() => {});
+        if (state.sourceTabId) {
+          chrome.tabs.sendMessage(state.sourceTabId, { action: 'setRetention', minutes: mins }).catch(() => {});
+        }
+      });
+    }
+
     // Editable Start & End inputs
     if (els.inputStartTime) {
       els.inputStartTime.addEventListener('focus', () => {
@@ -1710,6 +1723,14 @@
     parseQueryParams();
     initTimelineInteractions();
     initListeners();
+
+    // Load saved buffer retention preference
+    chrome.storage.local.get(['better_idn_buffer_retention']).then((res) => {
+      const mins = res.better_idn_buffer_retention !== undefined ? Number(res.better_idn_buffer_retention) : 0;
+      if (els.studioRetentionSelect) {
+        els.studioRetentionSelect.value = String(mins);
+      }
+    }).catch(() => {});
 
     fetchStreamData();
     loadStudioCachedStreams();

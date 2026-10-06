@@ -50,6 +50,20 @@
           </svg>
           <span>Buffer: <strong id="buffer-duration">0s</strong> (<span id="buffer-count">0</span> segs)</span>
         </div>
+        <div class="status-badge retention-badge" title="Rolling Buffer Retention Window">
+          <svg class="badge-icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="10"></circle>
+            <polyline points="12 6 12 12 16 14"></polyline>
+          </svg>
+          <label for="studio-retention-select" class="retention-label">Retention:</label>
+          <select id="studio-retention-select" class="studio-select-sm" title="Change rolling buffer retention">
+            <option value="0">Unlimited (Full Stream)</option>
+            <option value="30">30m Buffer</option>
+            <option value="60">60m (1h)</option>
+            <option value="120">120m (2h)</option>
+            <option value="180">180m (3h)</option>
+          </select>
+        </div>
         <button class="btn btn-secondary btn-sm" id="btn-cached-streams-modal" title="View all cached stream videos">
           <svg class="btn-icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"></path>

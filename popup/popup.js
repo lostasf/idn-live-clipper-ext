@@ -35,6 +35,7 @@
   const clipperStatsText = $('#clipper-stats-text');
   const btnOpenClipper = $('#btn-open-clipper');
   const btnClearBuffer = $('#btn-clear-buffer');
+  const selectRetention = $('#select-popup-retention');
   const btnViewAllCached = $('#btn-view-all-cached');
   const inlineCachedCount = $('#inline-cached-count');
   const sectionUrl = $('#section-url');
@@ -645,6 +646,25 @@
       await loadCachedStreams();
     }
   });
+
+  // Load saved buffer retention preference
+  chrome.storage.local.get(['better_idn_buffer_retention']).then((res) => {
+    const mins = res.better_idn_buffer_retention !== undefined ? Number(res.better_idn_buffer_retention) : 0;
+    if (selectRetention) {
+      selectRetention.value = String(mins);
+    }
+  }).catch(() => {});
+
+  if (selectRetention) {
+    selectRetention.addEventListener('change', async () => {
+      const mins = parseInt(selectRetention.value, 10) || 0;
+      await chrome.storage.local.set({ better_idn_buffer_retention: mins });
+      await chrome.runtime.sendMessage({ action: 'setRetention', minutes: mins }).catch(() => {});
+      if (currentTabId) {
+        chrome.tabs.sendMessage(currentTabId, { action: 'setRetention', minutes: mins }).catch(() => {});
+      }
+    });
+  }
 
   // ── Formatting Utilities ──────────────────────────────────────────────────
 

@@ -161,6 +161,19 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       break;
     }
 
+    case 'setRetention': {
+      const minutes = message.minutes !== undefined ? Number(message.minutes) : 0;
+      chrome.storage.local.set({ better_idn_buffer_retention: minutes }).then(() => {
+        chrome.tabs.query({ url: ['https://*.idn.app/*', 'https://idn.app/*'] }, (tabs) => {
+          for (const tab of tabs) {
+            chrome.tabs.sendMessage(tab.id, { action: 'setRetention', minutes }).catch(() => {});
+          }
+        });
+        sendResponse({ ok: true, minutes });
+      }).catch((err) => sendResponse({ ok: false, error: err.message }));
+      return true;
+    }
+
     case 'getTabState': {
       const targetTabId = message.tabId || tabId;
       sendResponse(targetTabId ? (tabState[targetTabId] || null) : null);
@@ -279,9 +292,16 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
             if (data && data.byteLength > 0) {
               await globalThis.ClipperStorage.saveSegment({ ...message.segment, data });
-              // Periodic prune: ~5% chance per incoming segment to keep buffer healthy
+              // Periodic prune: ~5% chance per incoming segment, only if retention or size limit is configured
               if (Math.random() < 0.05) {
-                globalThis.ClipperStorage.pruneOldSegments(message.segment.streamSlug).catch(() => {});
+                chrome.storage.local.get(['better_idn_buffer_retention', 'better_idn_buffer_max_bytes']).then((config) => {
+                  const retentionMin = typeof config.better_idn_buffer_retention === 'number' ? config.better_idn_buffer_retention : 0;
+                  const retentionMs = retentionMin > 0 ? retentionMin * 60 * 1000 : 0;
+                  const maxBytes = typeof config.better_idn_buffer_max_bytes === 'number' ? config.better_idn_buffer_max_bytes : 0;
+                  if (retentionMs > 0 || maxBytes > 0) {
+                    globalThis.ClipperStorage.pruneOldSegments(message.segment.streamSlug, retentionMs, maxBytes).catch(() => {});
+                  }
+                }).catch(() => {});
               }
             }
           }

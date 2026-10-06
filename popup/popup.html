@@ -120,6 +120,17 @@
               <span id="clipper-stats-text" class="buffer-stat">0 segs (0 MB)</span>
             </div>
 
+            <div class="buffer-retention-row">
+              <span class="buffer-label">Buffer Retention</span>
+              <select id="select-popup-retention" class="select-retention" title="Buffer retention window">
+                <option value="0">Unlimited (Full Stream)</option>
+                <option value="30">30 minutes</option>
+                <option value="60">1 hour (60m)</option>
+                <option value="120">2 hours (120m)</option>
+                <option value="180">3 hours (180m)</option>
+              </select>
+            </div>
+
             <!-- Primary Launch Studio -->
             <button id="btn-open-clipper" class="btn btn-record btn-full">
               <svg class="btn-icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">

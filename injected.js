@@ -112,8 +112,8 @@
   const knownSegmentsMap = new Map(); // url -> { sequence, duration, timestamp }
   let autoSequenceCounter = 1;
   let segmentCountSincePrune = 0;
-  let clipperRetentionMs = 30 * 60 * 1000; // 30 minutes default
-  let clipperMaxBytes = 1200 * 1024 * 1024; // 1.2 GB default
+  let clipperRetentionMs = 0; // 0 = Unlimited (keep entire stream by default)
+  let clipperMaxBytes = 0; // 0 = Unlimited (no byte size cap)
 
   function getSlugFromUrl() {
     const path = window.location.pathname;
@@ -243,15 +243,17 @@
           quality,
         });
 
-        // Periodic rolling buffer prune
+        // Periodic rolling buffer prune (only when a retention limit or size cap is configured)
         segmentCountSincePrune++;
         if (segmentCountSincePrune >= 10) {
           segmentCountSincePrune = 0;
-          window.ClipperStorage.pruneOldSegments(
-            streamSlug,
-            clipperRetentionMs,
-            clipperMaxBytes
-          ).catch(() => {});
+          if (clipperRetentionMs > 0 || clipperMaxBytes > 0) {
+            window.ClipperStorage.pruneOldSegments(
+              streamSlug,
+              clipperRetentionMs,
+              clipperMaxBytes
+            ).catch(() => {});
+          }
         }
 
         // Notify content script of buffered segment
@@ -871,11 +873,12 @@
       }
 
       case 'SET_BUFFER_LIMIT': {
-        if (payload?.retentionMinutes) {
-          clipperRetentionMs = payload.retentionMinutes * 60 * 1000;
+        if (payload?.retentionMinutes !== undefined) {
+          const mins = Number(payload.retentionMinutes) || 0;
+          clipperRetentionMs = mins > 0 ? mins * 60 * 1000 : 0;
         }
-        if (payload?.maxBytes) {
-          clipperMaxBytes = payload.maxBytes;
+        if (payload?.maxBytes !== undefined) {
+          clipperMaxBytes = Number(payload.maxBytes) || 0;
         }
         break;
       }

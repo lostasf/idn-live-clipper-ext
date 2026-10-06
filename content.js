@@ -42,7 +42,8 @@
     selectionStartMs: null,
     selectionEndMs: null,
     playheadMs: null,
-    retentionMinutes: 30,
+    retentionMinutes: 0, // 0 = Unlimited (keep entire stream)
+    maxBytes: 0, // 0 = Unlimited
     previewVideo: null,
     previewBlobUrl: null,
     isPlayingPreview: false,
@@ -733,9 +734,15 @@
       }
 
       case 'setRetention': {
-        clipper.retentionMinutes = message.minutes || 30;
-        sendToPage('SET_BUFFER_LIMIT', { retentionMinutes: clipper.retentionMinutes });
-        sendResponse({ ok: true });
+        const mins = message.minutes !== undefined ? Number(message.minutes) : 0;
+        clipper.retentionMinutes = mins;
+        chrome.storage.local.set({ better_idn_buffer_retention: mins }).catch(() => {});
+        sendToPage('SET_BUFFER_LIMIT', { retentionMinutes: mins, maxBytes: clipper.maxBytes || 0 });
+        const retentionSelect = document.querySelector('#bidn-select-retention');
+        if (retentionSelect) {
+          retentionSelect.value = String(mins);
+        }
+        sendResponse({ ok: true, minutes: mins });
         return true;
       }
 
@@ -1415,11 +1422,15 @@
         bufferEngine.segmentCountSincePrune++;
         if (bufferEngine.segmentCountSincePrune >= 10) {
           bufferEngine.segmentCountSincePrune = 0;
-          window.ClipperStorage.pruneOldSegments(
-            bufferEngine.streamSlug,
-            clipper.retentionMinutes * 60 * 1000,
-            1200 * 1024 * 1024
-          ).catch(() => {});
+          const retMs = clipper.retentionMinutes > 0 ? clipper.retentionMinutes * 60 * 1000 : 0;
+          const maxBytes = clipper.maxBytes > 0 ? clipper.maxBytes : 0;
+          if (retMs > 0 || maxBytes > 0) {
+            window.ClipperStorage.pruneOldSegments(
+              bufferEngine.streamSlug,
+              retMs,
+              maxBytes
+            ).catch(() => {});
+          }
         }
 
         refreshClipperStats();
@@ -2315,9 +2326,11 @@
             ⬇️ Download MP4
           </button>
           <select class="bidn-select-retention" id="bidn-select-retention" title="Buffer Retention Limit">
-            <option value="15">15m Buffer</option>
-            <option value="30" selected>30m Buffer</option>
-            <option value="60">60m Buffer</option>
+            <option value="0" selected>Unlimited Buffer</option>
+            <option value="30">30m Buffer</option>
+            <option value="60">60m (1h) Buffer</option>
+            <option value="120">120m (2h) Buffer</option>
+            <option value="180">180m (3h) Buffer</option>
           </select>
           <button class="bidn-btn" id="bidn-btn-clear-buffer" title="Clear Cached Segments">
             🗑️ Clear
@@ -2554,12 +2567,18 @@
 
     // Retention change
     const retentionSelect = dock.querySelector('#bidn-select-retention');
-    retentionSelect.addEventListener('change', () => {
-      const mins = parseInt(retentionSelect.value, 10);
-      clipper.retentionMinutes = mins;
-      sendToPage('SET_BUFFER_LIMIT', { retentionMinutes: mins });
-      showToast(`Buffer retention set to ${mins}m`, 'info', 2000);
-    });
+    if (retentionSelect) {
+      retentionSelect.value = String(clipper.retentionMinutes || 0);
+      retentionSelect.addEventListener('change', () => {
+        const mins = parseInt(retentionSelect.value, 10) || 0;
+        clipper.retentionMinutes = mins;
+        chrome.storage.local.set({ better_idn_buffer_retention: mins }).catch(() => {});
+        chrome.runtime.sendMessage({ action: 'setRetention', minutes: mins }).catch(() => {});
+        sendToPage('SET_BUFFER_LIMIT', { retentionMinutes: mins, maxBytes: clipper.maxBytes || 0 });
+        const label = mins === 0 ? 'Unlimited (Full Stream)' : `${mins}m`;
+        showToast(`Buffer retention set to ${label}`, 'info', 2000);
+      });
+    }
 
     // Clear Buffer
     dock.querySelector('#bidn-btn-clear-buffer').addEventListener('click', async () => {
@@ -2910,6 +2929,19 @@
   }
 
   function init() {
+    chrome.storage.local.get(['better_idn_buffer_retention']).then((res) => {
+      if (res.better_idn_buffer_retention !== undefined) {
+        clipper.retentionMinutes = Number(res.better_idn_buffer_retention) || 0;
+      } else {
+        clipper.retentionMinutes = 0; // Default: Unlimited
+      }
+      sendToPage('SET_BUFFER_LIMIT', { retentionMinutes: clipper.retentionMinutes, maxBytes: clipper.maxBytes || 0 });
+      const retentionSelect = document.querySelector('#bidn-select-retention');
+      if (retentionSelect) {
+        retentionSelect.value = String(clipper.retentionMinutes);
+      }
+    }).catch(() => {});
+
     processPendingClears()
       .then(() => syncCachedStreamsToStorage())
       .then(() => syncCurrentStreamSegmentsToExtension())
